@@ -1,0 +1,127 @@
+import Shell
+
+class Buildah {
+    private final Script script
+
+    Buildah(Script script) {
+        this.script = script
+    }
+    /**
+     * Preforms a buildah login
+     * @param username for the container registry
+     * @param password for the container registry
+     * @param repo container registry url/repo
+     * @return
+     */
+    def login(def username, def password, def repo) {
+        script.echo "------------------------Do buildah_login for ${repo}-------------------------------"
+        new Shell(script).sh("buildah login --username ${username} --password ${password} ${repo}", true)
+    }
+    /**
+     * Builds the container using Buildah, if image exists then it will skip the build unless forceBuild is true
+     * Assumes that buildah login is done
+     * @param forceBuild, if true image will be created even if it exists in registry,
+     * if false then checks the image  in registry and skips the build
+     * @param image, name of the image
+     * @return
+     */
+    def build(def image, def forceBuild=false, def addOns){
+        Boolean exists = false;
+        script.echo "forceBuild= ${forceBuild}"
+        if (forceBuild) {
+            new Shell(script).sh("buildah bud -t ${image} . ${addOns}");
+        } else {
+            exists = pullWithoutFail(image);
+            if (!exists) { new Shell(script).sh("buildah bud -t ${image} . ${addOns}") }
+            else {script.echo "Image ${image} already exists in the container registry. No need to rebuild!"}
+        }
+        return exists;
+    }
+
+    /**
+     * pulls the image from container registry
+     * Assumes docker login is done
+     * @param image, name of the image
+     * @return
+     */
+    def pull(def image){
+        new Shell(script).sh("buildah pull ${image}")
+    }
+    /**
+     * pulls the image from container registry
+     * Assumes docker login is done
+     * @param image, name of the image
+     * @return false if im age doesn't exists
+     */
+    def pullWithoutFail(def image){
+        Boolean exists = false;
+        try { pull(image); exists = true;} catch (e) { script.error "Error pulling image ${image}: ${e.message}" exists = false; }
+        return exists;
+    }
+    /**
+     * pulls the image from container registry
+     * @param image, name of the image
+     * @return false if image doesn't exists
+     */
+    def checkLocal(def image){
+        def exists = false;
+        def entries = image.split(':')
+        if(entries.length > 1){
+            def r = new Shell(script).sh("buildah images --filter name=${image} --quiet")
+            if ( r.trim().length() > 0 ) { exists = true;script.echo "${image} exists locally, return Value = ${r}" } else {script.echo "Can't find ${image} locally, return Value = ${r}"}
+        }
+        return exists;
+    }
+
+    /**
+     * Pushes the image to the container registry
+     * Assumes buildah login is done
+     * @param image, name of the image
+     * @return
+     */
+    def push(def image){
+        new Shell(script).sh("buildah push ${image}")
+    }
+    /**
+     * Add the labels to existing image
+     * Assumes image already exists on machine
+     * @param image
+     * @param l
+     * @return
+     */
+    def addLabels(def image, def l){
+        new Shell(script).sh("echo \"FROM ${image}\" | buildah bud -t ${image} --label ${l} -")
+    }
+
+    /**
+     * Inspects the image to check if label is present or not
+     * Assumes the image is available locally
+     * @param i, image name to be inspected
+     * @param s, name of the label to look for
+     * @return
+     */
+    def inspect(def i, def s){
+        return new Shell(script).sh("buildah inspect --format '{{ index .Config.Labels \"${s}\"}}' ${i}")
+    }
+
+    /**
+     * Tags and pushes the image(source to destination). If src doesn't exits tries to download first
+     * Assumes docker login is done and source image is already present in registry
+     * @param src, name of the source image
+     * @param dst, name of the dst image
+     * @return
+     */
+    def tagAndPush(def src, def dst){
+        def exists;
+        //Check if destination already there in registry then no need to tag
+        try { pull(dst); exists = true; } catch (e) { exists = false; }
+        if(!exists) {
+            //check locally first if available no need to pull
+            exists = checkLocal(src);
+            //try to get it from registry if not local
+            if (!exists) { try { pull(src); exists = true; } catch (e) { exists = false; }}
+            if (exists) { new Shell(script).sh("buildah tag ${src} ${dst} && buildah push ${dst}");}
+            else {script.error "Image ${src} doesn't exists in Registry, needs to be built!"}
+        } else {script.echo "Image ${dst} already exists in Docker repo. No need to be pushed."}
+    }
+}
