@@ -1,0 +1,40 @@
+pipeline {
+    agent any
+
+    // Import the Buildah library from the Git repository
+    @Library(['jenkins-buildah-library@main']) _
+    
+
+
+
+        // stage('Login to Container Registry') {
+        //     steps {
+        //         script {
+        //             // Login to the container registry using credentials
+        //             def buildah = new Buildah(this)
+        //             buildah.login(REGISTRY_USERNAME, REGISTRY_PASSWORD, REGISTRY_URL)
+        //         }
+        //     }
+        // }
+
+        stage('Pull Alpine Image') {
+            steps {
+                script {
+                    // Pull the Alpine image
+                    def buildah = new Buildah(this)
+                    buildah.pull('docker.io/library/alpine:latest')
+                }
+            }
+        }
+
+        // stage('Build and Run Jenkins Container') {
+        //     steps {
+        //         script {
+        //             // Build and run the Jenkins container using the pulled Alpine image
+        //             def buildah = new Buildah(this)
+        //             buildah.build(CONTAINER_NAME, true, "--from=${ALPINE_IMAGE}")
+        //             buildah.run(CONTAINER_NAME, '--detach --name jenkins')
+        //         }
+        //     }
+        // }
+}
